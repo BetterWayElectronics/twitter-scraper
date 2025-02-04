@@ -1,2 +1,2 @@
-# twitter-scraper
-Userscript for client-side web scraping of twitter replies of a specific user
+# Twitter-Scraper
+Userscript for client-side web scraping of twitter replies of a specific user. It works by auto scrolling and capturing all of their data, a button will appear to start/stop the script if you are on the replies page. In the end after no more replies are detected it will prompt you to save a text file with all of their replies. You can choose to add the date to each post if you desire. Great script for forensically gathering information to later parse into a LLM or for storage/archiving. Detection rate of posts seems accurate enough and the speed at which it captures/scrolls can be adjusted to suit your internet/browser speed. Test on an account with under 200 posts and match against their post count to confirm.
