@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Twitter Replies Extractor with Auto-Scroll (Unique IDs, Configurable Settings)
+// @name         Twitter Replies Extractor with Auto-Scroll (Unique IDs, Configurable Settings, With Date & Media)
 // @namespace    http://tampermonkey.net/
-// @version      1.9
-// @description  Auto-scrolls the Twitter "with_replies" page, collects unique replies made by the page owner, and exports them as a text file. Includes a stop button. All key settings are grouped together for easy adjustments.
+// @version      2.2
+// @description  Auto-scrolls the Twitter "with_replies" page, collects unique replies made by the page owner, and exports them as a text file. Optionally includes the date of each post (formatted as DATE - POST), plus any URLs (including YouTube links) and images found in the tweet. Optionally saves any t.co links to a separate file. Includes a stop button. All key settings are grouped together for easy adjustments.
 // @author       BwE
 // @match        https://twitter.com/*/with_replies
 // @match        https://x.com/*/with_replies
@@ -13,11 +13,13 @@
     'use strict';
 
     // -------------------------------
-    // Configurable Settings 
+    // Configurable Settings
     // -------------------------------
-    const scrollFactor = 1;      // Fraction of viewport height to scroll each time (1 for full page, 0.5 for half page, etc.)
-    const checkInterval = 100;    // Interval (in ms) between each scroll & check
-    const stableThreshold = 5000;  // How long (in ms) to wait without new unique tweets before stopping
+    const scrollFactor = 1;          // Fraction of viewport height to scroll each time (1 for full page, 0.5 for half page, etc.)
+    const checkInterval = 100;       // Interval (in ms) between each scroll & check
+    const stableThreshold = 5000;    // How long (in ms) to wait without new unique tweets before stopping
+    const includeDate = true;        // If true, add the date of each post in the output (format: DATE - POST)
+    const exportTcoLinks = true;     // Toggle this to true to export t.co links to a separate file, false to disable.
     // -------------------------------
 
     // Only add the buttons if the current URL contains '/with_replies'
@@ -154,10 +156,13 @@
     }
 
     // Extract replies from the collected tweet HTML and trigger a file download.
+    // Also collects only the t.co links and, if enabled, exports them to a separate file.
     function extractReplies(tweetHTMLArray, username) {
         // Create a temporary container to re-create tweet nodes from their HTML.
         const container = document.createElement('div');
         const replies = [];
+        // Use a Set to store unique t.co links.
+        const tcoLinksSet = new Set();
 
         tweetHTMLArray.forEach(html => {
             container.innerHTML = html;
@@ -166,7 +171,55 @@
             if (tweet.querySelector(`a[href="/${username}"]`)) {
                 const tweetTextElement = tweet.querySelector('[data-testid="tweetText"]');
                 if (tweetTextElement) {
-                    replies.push(tweetTextElement.innerText.trim());
+                    let text = tweetTextElement.innerText.trim();
+
+                    // If including the date, attempt to extract it.
+                    if (includeDate) {
+                        const timeElement = tweet.querySelector('time');
+                        let dateStr = "";
+                        if (timeElement) {
+                            // Prefer the datetime attribute if available.
+                            dateStr = timeElement.getAttribute("datetime") || timeElement.innerText;
+                        }
+                        if (dateStr) {
+                            text = dateStr + " - " + text;
+                        }
+                    }
+
+                    // -------------------------------
+                    // Extract URLs and Image URLs
+                    // -------------------------------
+                    // Extract all links from the tweet text.
+                    const tweetLinks = [];
+                    tweetTextElement.querySelectorAll('a').forEach(link => {
+                        const href = link.href;
+                        if (href && href.startsWith("http")) {
+                            tweetLinks.push(href);
+                            // If it's a t.co link, add it to the set.
+                            if (href.includes("t.co")) {
+                                tcoLinksSet.add(href);
+                            }
+                        }
+                    });
+
+                    // Look for images within the tweet (using Twitter's typical test id for tweet images)
+                    const tweetImages = [];
+                    tweet.querySelectorAll('[data-testid="tweetPhoto"]').forEach(img => {
+                        if (img.src) {
+                            tweetImages.push(img.src);
+                        }
+                    });
+
+                    // Append found links and image URLs to the tweet text.
+                    if (tweetLinks.length > 0) {
+                        text += "\nLinks: " + tweetLinks.join(", ");
+                    }
+                    if (tweetImages.length > 0) {
+                        text += "\nImages: " + tweetImages.join(", ");
+                    }
+                    // -------------------------------
+
+                    replies.push(text);
                 }
             }
         });
@@ -187,5 +240,18 @@
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         alert(`Exported ${replies.length} replies.`);
+
+        // If the toggle is enabled and any t.co links were found, export them to a separate file.
+        if (exportTcoLinks && tcoLinksSet.size > 0) {
+            const tcoBlob = new Blob([Array.from(tcoLinksSet).join("\n")], { type: "text/plain;charset=utf-8" });
+            const tcoUrl = URL.createObjectURL(tcoBlob);
+            const aTco = document.createElement("a");
+            aTco.href = tcoUrl;
+            aTco.download = `${username}_tco_links.txt`;
+            document.body.appendChild(aTco);
+            aTco.click();
+            document.body.removeChild(aTco);
+            URL.revokeObjectURL(tcoUrl);
+        }
     }
 })();
